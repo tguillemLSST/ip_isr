@@ -89,6 +89,12 @@ def interpolateDefectList(maskedImage, defectList, fwhm, fallbackValue=None):
     fallbackValue : scalar, optional
         Fallback value if an interpolated value cannot be determined.
         If None, then the clipped mean of the image is used.
+
+    Notes
+    -----
+    The `fwhm` parameter is used to create a PSF, but the underlying
+    interpolation code (`lsst.meas.algorithms.interpolateOverDefects`) does
+    not currently make use of this information.
     """
     psf = createPsf(fwhm)
     if fallbackValue is None:
@@ -222,6 +228,12 @@ def interpolateFromMask(maskedImage, fwhm, growFootprints=1, maskName='SAT', fal
         Mask plane name.
     fallbackValue : scalar, optional
         Value of last resort for interpolation.
+
+    Notes
+    -----
+    The `fwhm` parameter is used to create a PSF, but the underlying
+    interpolation code (`lsst.meas.algorithms.interpolateOverDefects`) does
+    not currently make use of this information.
     """
     mask = maskedImage.getMask()
     thresh = afwDetection.Threshold(mask.getPlaneBitMask(maskName), afwDetection.Threshold.BITMASK)
@@ -255,6 +267,12 @@ def saturationCorrection(maskedImage, saturation, fwhm, growFootprints=1, interp
         Mask plane name.
     fallbackValue : scalar, optional
         Value of last resort for interpolation.
+
+    Notes
+    -----
+    The `fwhm` parameter is used to create a PSF, but the underlying
+    interpolation code (`lsst.meas.algorithms.interpolateOverDefects`) does
+    not currently make use of this information.
     """
     defectList = makeThresholdMask(
         maskedImage=maskedImage,
