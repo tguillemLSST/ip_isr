@@ -21,19 +21,16 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 """
-Arbitrary curves with interpolation.
+Something to do with transmission curves.
 """
-import astropy.units as u
-import numpy as np
-import itertools
-
 from astropy.table import Table
 from collections import defaultdict
-from scipy.interpolate import interp1d
 
+import lsst.afw.image as afwImage
 import lsst.afw.cameraGeom.utils as cgUtils
 from lsst.geom import Point2I
 from lsst.ip.isr import IsrCalib
+
 
 __all__ = ["Curve"]
 
@@ -50,17 +47,27 @@ class Curve(IsrCalib):
     """
 
     _OBSTYPE = 'qe_curve'
-    _SCHEMA = 'Simple Curve'
+    _SCHEMA = 'Gen3 qe curves'
     _VERSION = 1.0
 
-    def __init__(self, mode="UNKNOWN", **kwargs):
-        self.type = 'QE'
-        self.mode = mode
+    def __init__(self, curveType=None, level=None, filterName=None, listDict=None,
+                 **kwargs):
+        self.curveType = curveType if curveType else 'QE'
+        self.level = level if level else None
+        self.filter = filterName if filterName else None
+        self.curves = {}
 
         super().__init__(**kwargs)
+        self.requiredAttributes.update(['curveType', 'level', 'filter'
+                                        'curves'])
 
-        self.requiredAttributes.update(['mode', 'type',
-                                        'wavelength', 'efficiency'])
+        if listDict:
+            for key in listDict:
+                wavelengthUnit = listDict[key].get('unit', "nm")
+                wavelengths = listDict[key].get('wavelengths')
+                throughputs = listDict[key].get('throughputs')
+                self.curve[key] = self.fromLists(wavelengths, throughputs,
+                                                 wavelengthUnit=wavelengthUnit)
 
     def updateMetadata(self, setDate=False, **kwargs):
         """Update calibration metadata.
@@ -76,10 +83,50 @@ class Curve(IsrCalib):
         kwargs :
             Other keyword parameters to set in the metadata.
         """
-        kwargs['MODE'] = self.mode or "UNKNOWN"
-        kwargs['TYPE'] = self.type
+        kwargs['TYPE'] = self.curveType
+        kwargs['LEVEL'] = self.level
+        kwargs['FILTER'] = self.filter
 
         super().updateMetadata(setDate=setDate, **kwargs)
+
+    @staticmethod
+    def standardCurveFromLists(wavelengths, throughputs,
+                               wavelengthUnit="nm"):
+        """Method to generate a curve from wavelength/throughput list
+        """
+        if len(wavelengths) != len(throughputs):
+            raise RuntimeError("Wavelength and throughput lists are different length!")
+
+        if wavelengthUnit == 'nm':
+            wavelengths *= 10.0
+        atMin = throughputs[0]
+        atMax = throughputs[-1]
+        return afwImage.TransmissionCurve.makeSpatiallyConstant(throughput=throughputs,
+                                                                wavelengths=wavelengths,
+                                                                throughputAtMin=atMin,
+                                                                throughputAtMax=atMax)
+
+    @staticmethod
+    def radialCurveFromLists(radii, wavelengths, throughputs,
+                             radiusScale=1.0, wavelengthUnit="nm"):
+        """Method to generate a curve from a set of throughputs defined on a
+        grid of wavelength/radius.
+
+        """
+        if len(radii) != throughputs.shape[0]:
+            raise RuntimeError(f"Radii dimension mismatch: {len(radii)} != {throughputs.shape[0]}")
+        if len(wavelengths) != throughputs.shape[1]:
+            raise RuntimeError(f"Wavelength dimension mismatch: {len(wavelengths)} != {throughputs.shape}")
+
+        radii *= radiusScale
+        if wavelengthUnit == 'nm':
+            wavelengths *= 10.0
+
+        return afwImage.TransmissionCurve.makeRadial(throughput=throughputs,
+                                                     wavelengths=wavelengths,
+                                                     radii=radii,
+                                                     throughputAtMin=0.0,
+                                                     throughputAtMax=0.0)
 
     @classmethod
     def fromDict(cls, dictionary):
@@ -103,16 +150,35 @@ class Curve(IsrCalib):
         """
         calib = cls()
 
-        if calib._OBSTYPE != dictionary['metadata']['OBSTYPE']:
+        metadata = dictionary['metadata']
+        if calib._OBSTYPE != metadata['OBSTYPE']:
             raise RuntimeError(f"Incorrect curve supplied.  Expected {calib._OBSTYPE}, "
-                               f"found {dictionary['metadata']['OBSTYPE']}")
+                               f"found {metadata['OBSTYPE']}")
 
-        calib.setMetadata(dictionary['metadata'])
-        calib._detectorName = dictionary['metadata']['DETECTOR']
-        calib._detectorSerial = dictionary['metadata'].get('DETECTOR_SERIAL', None)
-        calib.mode = dictionary['metadata']['MODE']
+        calib.setMetadata(metadata)
+        calib.curveType = metadata.get('TYPE', 'QE')
+        calib.level = metadata.get('LEVEL', metadata.get('MODE', 'DETECTOR'))
+        calib.filter = metadata.get('FILTER', None)
 
-        calib.data = dictionary['data']
+        calib._detectorName = metadata.get('DETECTOR', None)
+        calib._detectorSerial = metadata.get('DETECTOR_SERIAL', None)
+
+        for key in dictionary['curves']:
+            curveDict = dictionary['curves']['key']
+            if curveDict['dimension'] == 1:
+                calib.curve[key] = cls.standardCurvefromLists(curveDict['wavelengths'],
+                                                              curveDict['throughputs'],
+                                                              wavelengthUnit=curveDict.get('unit', 'nm'))
+            elif curveDict['dimension'] == 2:
+                calib.curve[key] = cls.radialCurveFromLists(curveDict['radii'],
+                                                            curveDict['wavelengths'],
+                                                            curveDict['throughputs'],
+                                                            curveDict.get('radiusScale', 1.0),
+                                                            curveDict.get('unit', 'nm'))
+            else:
+                raise RuntimeError(f"Unknown  dimension: {curveDict['dimension']}")
+
+        return calib
 
     @classmethod
     def fromTable(cls, tableList):
@@ -134,28 +200,18 @@ class Curve(IsrCalib):
             The calibration defined in the tables.
         """
         qeTable = tableList[0]
-
         metadata = qeTable.meta
+
         inDict = dict()
         inDict['metadata'] = metadata
-        inDict['mode'] = metadata['MODE']
-        inDict['type'] = metadata['TYPE']
-        inDict['data'] = defaultdict(dict)
+        inDict['curves'] = defaultdict(dict)
 
-        wavelength = qeTable['wavelength']
-        efficiency = qeTable['efficiency']
-
-        if inDict['mode'] == 'AMP':
-            ampNameList = qeTable['amp_name']
-            ampNames = set(ampNameList)
-            for ampName in ampNames:
-                idx = np.where(ampNameList == ampName)[0]
-                inDict['data'][ampName]['wavelength'] = wavelength[idx]
-                inDict['data'][ampName]['efficiency'] = efficiency[idx]
-
-        elif inDict['mode'] in ('DETECTOR', 'IMAGE'):
-            inDict['data'][inDict['mode']]['wavelength'] = wavelength
-            inDict['data'][inDict['mode']]['efficiency'] = efficiency
+        for row in qeTable:
+            key = row['key']
+            for column in ['dimension', 'wavelengths' 'throughputs',
+                           'unit', 'radii', 'radiusScale']:
+                if column in row:
+                    inDict['curves'][key][column] = row[column]
 
         return cls().fromDict(inDict)
 
@@ -172,23 +228,32 @@ class Curve(IsrCalib):
             information.
         """
         self.updateMetadata()
-        if self.mode == 'AMP':
-            amp_names = [[ampName] * len(self.data[ampName]) for ampName in self.data]
-            wavelength = list(itertools.chain.from_iterable([self.data[ampName]['wavelength']
-                                                             for ampName in self.data]))
-            efficiency = list(itertools.chain.from_iterable([self.data[ampName]['efficiency']
-                                                             for ampName in self.data]))
-            catalog = Table([{'amp_names': amp_names, 'wavelength': wavelength,
-                              'efficiency': efficiency}])
-        elif self.mode in ('DETECTOR', 'IMAGE'):
-            catalog = Table([{'wavelength': self.data[self.mode]['wavelength'],
-                              'efficiency': self.data[self.mode]['efficiency']}])
 
+        (keys, dimension, wavelengths, throughputs,
+         unit, radii, radiusScale) = ([], [], [], [],
+                                      [], [], [])
+        for key in self.curves:
+            keys.append(key)
+            dimension.append(self.curves[key]['dimension'])
+            wavelengths.append(self.curves[key]['wavelengths'])
+            throughputs.append(self.curves[key]['throughputs'])
+            unit.append(self.curves[key].get('unit', 'nm'))
+            radii.append(self.curves[key].get('radii', []))
+            radiusScale.append(self.curves[key].get('radiusScale', 0.0))
+
+        catalog = Table([{'key': keys,
+                          'dimension': dimension,
+                          'wavelengths': wavelengths,
+                          'throughputs': throughputs,
+                          'unit': unit,
+                          'radii': radii,
+                          'radiusScale': radiusScale}])
         catalog.meta = self.getMetadata().toDict()
+
         return([catalog])
 
     # Actual science methods
-    def evaluate(self, wavelength, detector=None, position=None,
+    def evaluate(self, wavelengths, detector=None, position=None,
                  kind='linear', bounds_error=False, fill_value=0):
         """Interpolate the curve at the specified position and wavelength.
 
@@ -226,39 +291,11 @@ class Curve(IsrCalib):
         """
         if self.mode == 'AMP':
             targetAmp = cgUtils.findAmp(detector, Point2I(position))
-            wavelengths = self.data[targetAmp.getName()]['wavelength']
-            efficiencies = self.data[targetAmp.getName()]['efficiency']
+            return self.curves[targetAmp].sampleAt(position, wavelengths)
         elif self.mode in ('DETECTOR', 'IMAGE'):
             # Should IMAGE have subregions defined?
-            wavelengths = self.data[self.mode]['wavelength']
-            efficiencies = self.data[self.mode]['efficiency']
-
-        return self.interpolate(wavelengths, efficiencies, wavelength,
-                                kind=kind, bounds_error=bounds_error, fill_value=fill_value)
-
-    def interpolate(self, wavelengths, values, wavelength, kind, bounds_error, fill_value):
-        """Interplate the curve at the specified wavelength(s).
-        Parameters
-        ----------
-        wavelengths : `astropy.units.Quantity`
-            The wavelength values for the curve.
-        values : `astropy.units.Quantity`
-            The y-values for the curve.
-        wavelength : `astropy.units.Quantity`
-            The wavelength(s) at which to make the interpolation.
-        kind : `str`
-            The type of interpolation to do.  See documentation for
-            `scipy.interpolate.interp1d` for accepted values.
-        Returns
-        -------
-        value : `astropy.units.Quantity`
-            Interpolated value(s)
-        """
-        if not isinstance(wavelength, u.Quantity):
-            raise ValueError("Wavelengths at which to interpolate must be astropy quantities")
-        if not (isinstance(wavelengths, u.Quantity) and isinstance(values, u.Quantity)):
-            raise ValueError("Model to be interpreted must be astropy quantities")
-        interp_wavelength = wavelength.to(wavelengths.unit)
-        f = interp1d(wavelengths, values,
-                     kind=kind, bounds_error=bounds_error, fill_value=fill_value)
-        return f(interp_wavelength.value)*values.unit
+            keys = list(self.curves.keys())
+            if len(keys) == 1:
+                return self.curves[keys[0]].sampleAt(position, wavelengths)
+            else:
+                raise RuntimeError("unexpected multi-key value!")

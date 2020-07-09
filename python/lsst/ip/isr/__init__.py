@@ -36,4 +36,4 @@ from .overscan import *
 from .straylight import *
 from .isrQa import *
 from .isrMock import *
-from .simpleCurve import *
+from .qeCurve import *
