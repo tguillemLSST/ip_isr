@@ -56,6 +56,46 @@ class IsrCalib(abc.ABC):
         Detector to extract metadata from.
     log : `lsst.log.Log`, optional
         Log for messages.
+
+    Notes
+    -----
+
+    It is expected that sub-classes will add the appropriate
+    additional fields to the calibration, but the following attributes
+    are handled by this base class to ensure that standard metadata
+    fields are uniform.  Additional attributes should be appended to
+    the requiredAttributes field, as described below.
+
+    _OBSTYPE : `str`
+        Calibration type.  Must be set by sub-classes.
+    _SCHEMA : `str`
+        Schema type.  To allow calibration versioning.
+    _VERSION : `float`
+        Calibration version.  This may be used to handle new schema
+        versions.
+    _instrument : `str`
+        Name of the instrument this calibration is for.
+    _raftName : `str`, optional
+        Name of the raft holding the detector.
+    _slotName : `str`, optional
+        Name of the slot on the raft holding the detector.
+    _detectorName : `str`
+        Name of the detector this calibration is for.
+    _detectorSerial : `str`
+        Serial ID of the detector for detailed validation.
+    _detectorId : `int`
+        Integer ID of the detector in the camera.
+    _filter : `str`
+        Filter name this calibration is for.
+    _calibId : `str`
+        Calibration id to use with ingestion.
+    _metadata : `lsst.daf.base.PropertyList`
+        Collection of metadata entries
+    requiredAttributes : `list` [`str`]
+        List of attributes that are required for the calibration.
+        These are used to determine equivalence, and must be updated
+        by sub-classes to include their additional attributes.
+
     """
     _OBSTYPE = 'generic'
     _SCHEMA = 'NO SCHEMA'
@@ -73,7 +113,11 @@ class IsrCalib(abc.ABC):
 
         self.setMetadata(PropertyList())
 
-        # Define the required attributes for this calibration.
+        # Define the required attributes for this calibration.  This
+        # list of metadata values will be handled by the base class.
+        # Sub-classes should only need to manage any additional
+        # metadata entries, but should append those additional entries
+        # to the `self.requiredAttributes` list.
         self.requiredAttributes = set(['_OBSTYPE', '_SCHEMA', '_VERSION'])
         self.requiredAttributes.update(['_instrument', '_raftName', '_slotName',
                                         '_detectorName', '_detectorSerial', '_detectorId',
@@ -91,8 +135,8 @@ class IsrCalib(abc.ABC):
     def __eq__(self, other):
         """Calibration equivalence.
 
-        Subclasses will need to check specific sub-properties.  The
-        default is only to check common entries.
+        Subclasses will need to check any specific sub-properties not
+        included in self.requiredAttributes.
         """
         if not isinstance(other, self.__class__):
             return False
@@ -205,6 +249,58 @@ class IsrCalib(abc.ABC):
 
         mdSupplemental.update(kwargs)
         mdOriginal.update(mdSupplemental)
+
+    def calibInfoFromDict(self, dictionary):
+        """Handle common keywords.
+
+        This isn't an ideal solution, but until all calibrations
+        expect to find everything in the metadata, they still need to
+        search through dictionaries.
+
+        Parameters
+        ----------
+        dictionary : `dict` or `lsst.daf.base.PropertyList`
+            Source for the common keywords.
+
+        Raises
+        ------
+        RuntimeError :
+            Raised if the dictionary does not match the expected OBSTYPE.
+
+        """
+
+        def search(haystack, needles):
+            """Search dictionary 'haystack' for an entry in 'needles'
+            """
+            test = set([haystack.get(x, None) for x in needles])
+            if len(test) == 0:
+                if 'metadata' in haystack:
+                    return search(haystack['metadata'], needles)
+                else:
+                    return None
+            elif len(test) == 1:
+                return test[0]
+            else:
+                raise ValueError(f"Too many values found: {len(test)} {needles}")
+
+        if 'metadata' in dictionary:
+            metadata = dictionary['metadata']
+
+            if self._OBSTYPE != metadata['OBSTYPE']:
+                raise RuntimeError(f"Incorrect calibration supplied.  Expected {calib._OBSTYPE}, "
+                                   f"found {metadata['OBSTYPE']}")
+
+        self._instrument = search(dictionary, ['INSTRUME', 'instrument'])
+        self._raftName = search(dictionary, ['RAFTNAME'])
+        self._slotName = search(dictionary, ['SLOTNAME'])
+        self._detectorId = search(dictionary, ['DETECTOR', 'detectorId'])
+        self._detectorName = search(dictionary, ['DET_NAME', 'DETECTOR_NAME', 'detectorName'])
+        self._detectorSerial = search(dictionary, ['DET_SER', 'DETECTOR_SERIAL', 'detectorSerial'])
+        self._filter = search(dictionary, ['FILTER'])
+        self._calibId = search(dictionary, ['CALIB_ID'])
+
+        if not self._detectorId and self._detectorSerial:
+            self._detectorId = self._detectorSerial
 
     @classmethod
     def readText(cls, filename):
