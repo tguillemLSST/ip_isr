@@ -41,9 +41,13 @@ class QeCurve(IsrCalib):
     Parameters
     ----------
     curveType : `str`, optional
+        Type of transmission contained in the curve.
     level : `str`, optional
-    listDict : `dict` [`str` `dict`]
-
+        Level at which the transmission data is organized.
+    radiusScale : `float`, optional
+        Radius scale factor for radial dependent curves.
+    units : `str`, optional
+        Wavelength unit.
     camera : `lsst.afw.cameraGeom.Camera`, optional
     detector : `lsst.afw.cameraGeom.Detector`, optional
         Detector object.  Passed to self.fromDetector() on init.
@@ -51,11 +55,6 @@ class QeCurve(IsrCalib):
         Logger to handle messages.
     kwargs : `dict`, optional
         Other keyword arguments to pass to the parent init.
-
-    Raises
-    ------
-    RuntimeError :
-        Raised if
 
     Notes
     -----
@@ -82,8 +81,9 @@ class QeCurve(IsrCalib):
             Array of wavelength samples.
         throughputs : `numpy.array`
             Array of throughputs.
+        source : `str`, optional
+            Source of the data contained in the curve.
     """
-
     _OBSTYPE = 'qe_curve'
     _SCHEMA = 'Gen3 qe curves'
     _VERSION = 1.0
@@ -93,10 +93,11 @@ class QeCurve(IsrCalib):
         self.level = level if level else None
         self.radiusScale = radiusScale
         self.units = units
+        self.source = ''
         self.curves = {}
 
         super().__init__(**kwargs)
-        self.requiredAttributes.update(['curveType', 'level', 'radiusScale', 'units', 'curves'])
+        self.requiredAttributes.update(['curveType', 'level', 'radiusScale', 'units', 'source', 'curves'])
 
     def updateMetadata(self, setDate=False, **kwargs):
         """Update calibration metadata.
@@ -116,10 +117,11 @@ class QeCurve(IsrCalib):
         kwargs['LEVEL'] = self.level
         kwargs['RAD_SCL'] = self.radiusScale
         kwargs['UNITS'] = self.units
+        kwargs['SOURCE'] = self.source
 
         super().updateMetadata(setDate=setDate, **kwargs)
 
-    def addCurveData(key, dimension, radii=None, wavelengths=None, throughputs=None, length=(0, )):
+    def addCurveData(key, dimension, radii=None, wavelengths=None, throughputs=None, length=(0, ), atMin=None, atMax=None):
         """Add curve data to the calibration dictionary.
 
         Parameters
@@ -174,11 +176,18 @@ class QeCurve(IsrCalib):
         else:
             raise RuntimeError(f"Unsupported dimension {dimension}.")
 
+        if atMin is None:
+            atMin = throughputs[0]
+        if atMax is None:
+            atMax = throughputs[-1]
+
         # Inputs should be validated now.
         self.curve[key] = {'dimension': dimension,
                            'radii' : radii,
                            'wavelengths' : wavelengths,
                            'throughputs' : througputs,
+                           'atMin' : atMin,
+                           'atMax' : atMax
                            }
 
     @classmethod
@@ -212,6 +221,7 @@ class QeCurve(IsrCalib):
         calib.level = metadata.get('LEVEL', metadata.get('MODE', 'DETECTOR'))
         calib.radiusScale = metadata.get('RAD_SCL', 1.0)
         calib.units = metadata.get('UNITS', 'nm')
+        calib.source = metadata.get('SOURCE', '')
 
         for key in dictionary['curves']:
             calib.curve[key] = dictionary['curves'][key]
@@ -234,6 +244,7 @@ class QeCurve(IsrCalib):
         outDict['level'] = self.level
         outDict['radiusScale'] = self.radiusScale
         outDict['units'] = self.units
+        outDict['source'] = self.source
 
         outDict.curve = {}
         for key in self.curves:
@@ -269,7 +280,7 @@ class QeCurve(IsrCalib):
 
         for row in qeTable:
             key = row['key']
-            for column in ['dimension', 'radii', 'wavelengths' 'throughputs']:
+            for column in ['dimension', 'radii', 'wavelengths' 'throughputs', 'atMin', 'atMax']:
                 if column in row:
                     inDict['curves'][key][column] = row[column]
 
@@ -297,12 +308,15 @@ class QeCurve(IsrCalib):
         radii = [self.curve[key]['radii'] for key in self.curves]
         wavelengths = [self.curve[key]['wavelengths'] for key in self.curves]
         throughputs = [self.curve[key]['throughputs'] for key in self.curves]
-
+        minimums = [self.curve[key]['atMin'] for key in self.curves]
+        maximums = [self.curve[key]['atMax'] for key in self.curves]
         catalog = Table([{'key': keys,
                           'radii': radii,
                           'dimension': dimension,
                           'wavelengths': wavelengths,
-                          'throughputs': throughputs}])
+                          'throughputs': throughputs,
+                          'atMin': minimums,
+                          'atMax': maximums}])
         catalog.meta = self.getMetadata().toDict()
 
         return([catalog])
