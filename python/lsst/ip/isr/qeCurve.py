@@ -23,16 +23,15 @@
 """
 Something to do with transmission curves.
 """
+import numpy as np
 from astropy.table import Table
 from collections import defaultdict
 
 import lsst.afw.image as afwImage
-import lsst.afw.cameraGeom.utils as cgUtils
-from lsst.geom import Point2I
 from lsst.ip.isr import IsrCalib
 
 
-__all__ = ["Curve"]
+__all__ = ["QeCurve"]
 
 
 class QeCurve(IsrCalib):
@@ -121,7 +120,8 @@ class QeCurve(IsrCalib):
 
         super().updateMetadata(setDate=setDate, **kwargs)
 
-    def addCurveData(key, dimension, radii=None, wavelengths=None, throughputs=None, length=(0, ), atMin=None, atMax=None):
+    def addCurveData(self, key, dimension, radii=None, wavelengths=None, throughputs=None,
+                     length=(0, ), atMin=None, atMax=None):
         """Add curve data to the calibration dictionary.
 
         Parameters
@@ -154,7 +154,7 @@ class QeCurve(IsrCalib):
             if radii:
                 raise RuntimeError("Radii suppled for 1d curve.")
 
-            if wavelengths and througputs:
+            if wavelengths and throughputs:
                 if len(wavelengths) != len(throughputs):
                     raise RuntimeError("Wavelength and throughput arrays differ in length.")
             elif len(length) == 1:
@@ -165,7 +165,7 @@ class QeCurve(IsrCalib):
                 raise RuntimeError("No data supplied.")
         elif dimension == 2:
             if radii and wavelengths and throughputs:
-                if througputs.shape != (len(wavelengths), len(radii)):
+                if throughputs.shape != (len(wavelengths), len(radii)):
                     raise RuntimeError("Throughputs not equal to radii and wavelengths.")
             elif len(length) == 2:
                 radii = np.zeros(length[1])
@@ -183,11 +183,11 @@ class QeCurve(IsrCalib):
 
         # Inputs should be validated now.
         self.curve[key] = {'dimension': dimension,
-                           'radii' : radii,
-                           'wavelengths' : wavelengths,
-                           'throughputs' : througputs,
-                           'atMin' : atMin,
-                           'atMax' : atMax
+                           'radii': radii,
+                           'wavelengths': wavelengths,
+                           'throughputs': throughputs,
+                           'atMin': atMin,
+                           'atMax': atMax
                            }
 
     @classmethod
@@ -300,9 +300,6 @@ class QeCurve(IsrCalib):
         """
         self.updateMetadata()
 
-        (keys, dimension, wavelengths, throughputs,
-         unit, radii, radiusScale) = ([], [], [], [],
-                                      [], [], [])
         keys = [key for key in self.curves]
         dimensions = [self.curve[key]['dimension'] for key in self.curves]
         radii = [self.curve[key]['radii'] for key in self.curves]
@@ -312,7 +309,7 @@ class QeCurve(IsrCalib):
         maximums = [self.curve[key]['atMax'] for key in self.curves]
         catalog = Table([{'key': keys,
                           'radii': radii,
-                          'dimension': dimension,
+                          'dimension': dimensions,
                           'wavelengths': wavelengths,
                           'throughputs': throughputs,
                           'atMin': minimums,
@@ -359,7 +356,7 @@ class QeCurve(IsrCalib):
         atMin = atMin if atMin else throughputs[0]
         atMax = atMax if atMax else throughputs[-1]
         return afwImage.TransmissionCurve.makeSpatiallyConstant(throughput=throughputs,
-                                                                wavelengths=wavelengths * wavelengthFactor,,
+                                                                wavelengths=wavelengths * wavelengthFactor,
                                                                 throughputAtMin=atMin,
                                                                 throughputAtMax=atMax)
 

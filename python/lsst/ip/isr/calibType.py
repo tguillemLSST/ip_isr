@@ -287,7 +287,7 @@ class IsrCalib(abc.ABC):
             metadata = dictionary['metadata']
 
             if self._OBSTYPE != metadata['OBSTYPE']:
-                raise RuntimeError(f"Incorrect calibration supplied.  Expected {calib._OBSTYPE}, "
+                raise RuntimeError(f"Incorrect calibration supplied.  Expected {self._OBSTYPE}, "
                                    f"found {metadata['OBSTYPE']}")
 
         self._instrument = search(dictionary, ['INSTRUME', 'instrument'])
