@@ -68,6 +68,8 @@ class QeCurve(IsrCalib):
         Radius scale factor to apply.  Should be equal to the pixel size.
     units : `str`
         Units the wavelengths are tabulated in.
+    source : `str`
+        Source of the curve data.
     curves : `dict` [`str`, `dict`]
         Dictionary of curve data, indexed by the name of the level
         segments.  Each contains the following keys:
@@ -80,8 +82,11 @@ class QeCurve(IsrCalib):
             Array of wavelength samples.
         throughputs : `numpy.array`
             Array of throughputs.
-        source : `str`, optional
-            Source of the data contained in the curve.
+        atMin : `float`
+            Array of values to use below defined wavelength range.
+        atMax : `float`
+            Array of values to use above defined wavelength range.
+
     """
     _OBSTYPE = 'qe_curve'
     _SCHEMA = 'Gen3 qe curves'
