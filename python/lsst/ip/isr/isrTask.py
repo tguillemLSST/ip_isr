@@ -2081,7 +2081,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         See Also
         --------
-        lsst.ip.isr.isrFunctions.overscanCorrection
+        lsst.ip.isr.overscan.OverscanTask
         """
         if amp.getRawHorizontalOverscanBBox().isEmpty():
             self.log.info("ISR_OSCAN: No overscan region.  Not performing overscan correction.")
