@@ -443,48 +443,12 @@ class IsrTaskConfig(pipeBase.PipelineTaskConfig,
         target=OverscanCorrectionTask,
         doc="Overscan subtraction task for image segments.",
     )
-    overscanFitType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="The method for fitting the overscan bias level.",
-        default='MEDIAN',
-        allowed={
-            "POLY": "Fit ordinary polynomial to the longest axis of the overscan region",
-            "CHEB": "Fit Chebyshev polynomial to the longest axis of the overscan region",
-            "LEG": "Fit Legendre polynomial to the longest axis of the overscan region",
-            "NATURAL_SPLINE": "Fit natural spline to the longest axis of the overscan region",
-            "CUBIC_SPLINE": "Fit cubic spline to the longest axis of the overscan region",
-            "AKIMA_SPLINE": "Fit Akima spline to the longest axis of the overscan region",
-            "MEAN": "Correct using the mean of the overscan region",
-            "MEANCLIP": "Correct using a clipped mean of the overscan region",
-            "MEDIAN": "Correct using the median of the overscan region",
-            "MEDIAN_PER_ROW": "Correct using the median per row of the overscan region",
-        },
-        deprecated=("Please configure overscan via the OverscanCorrectionConfig interface."
-                    " This option will no longer be used, and will be removed after v20.")
-    )
-    overscanOrder = pexConfig.Field(
-        dtype=int,
-        doc=("Order of polynomial or to fit if overscan fit type is a polynomial, "
-             "or number of spline knots if overscan fit type is a spline."),
-        default=1,
-        deprecated=("Please configure overscan via the OverscanCorrectionConfig interface."
-                    " This option will no longer be used, and will be removed after v20.")
-    )
-    overscanNumSigmaClip = pexConfig.Field(
-        dtype=float,
-        doc="Rejection threshold (sigma) for collapsing overscan before fit",
-        default=3.0,
-        deprecated=("Please configure overscan via the OverscanCorrectionConfig interface."
-                    " This option will no longer be used, and will be removed after v20.")
-    )
-    overscanIsInt = pexConfig.Field(
+    doParallelOverscan = pexConfig.Field(
         dtype=bool,
-        doc="Treat overscan as an integer image for purposes of overscan.FitType=MEDIAN"
-            " and overscan.FitType=MEDIAN_PER_ROW.",
-        default=True,
-        deprecated=("Please configure overscan via the OverscanCorrectionConfig interface."
-                    " This option will no longer be used, and will be removed after v20.")
+        doc="Serial overscan is always enabled.  Setting this to true adds parallel overscan subtraction.",
+        default=False,
     )
+
     # These options do not get deprecated, as they define how we slice up the
     # image data.
     overscanNumLeadingColumnsToSkip = pexConfig.Field(
@@ -2073,6 +2037,13 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 Image of the overscan region with the overscan
                 correction applied. This quantity is used to estimate
                 the amplifier read noise empirically.
+            - ``edgeMask`` : `lsst.afw.image.Mask`
+                Mask of the suspect pixels.
+            - ``overscanMean`` : `float`
+                Median overscan fit value.
+            - ``overscanSigma`` : `float`
+                Clipped standard deviation of the overscan after
+                correction.
 
         Raises
         ------
@@ -2138,39 +2109,20 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             overscanBBoxes.append(lsst.geom.Box2I(oscanBBox.getBegin() + lsst.geom.Extent2I(dx0, 0),
                                                   lsst.geom.Extent2I(oscanBBox.getWidth() - dx0 + dx1,
                                                                      oscanBBox.getHeight())))
-
-        # Perform overscan correction on subregions, ensuring saturated
-        # pixels are masked.
+        if self.config.doParallelOverscan:
+            parallelBBox = amp.getRawVerticalOverscanBBox()
+            imageBBoxes.append(lsst.geom.Box2I(dataBBox.getBegin(),
+                                               lsst.geom.Extent2I(dataBBox.getWidth(), dataBBox.getHeight())))
+            overscanBBoxes.append(lsst.geom.Box2I(parallelBBox.getBegin() + lsst.geom.Extent2I(dx0),
+                                                  lsst.geom.Extent2I(parallelBBox.getWidth(),
+                                                                     parallelBBox.getHeight() - dx0 + dx1)))
+        
+        # Perform overscan correction on subregions.
         for imageBBox, overscanBBox in zip(imageBBoxes, overscanBBoxes):
-            ampImage = ccdExposure.maskedImage[imageBBox]
-            overscanImage = ccdExposure.maskedImage[overscanBBox]
-
-            overscanArray = overscanImage.image.array
-            median = numpy.ma.median(numpy.ma.masked_where(overscanImage.mask.array, overscanArray))
-            bad = numpy.where(numpy.abs(overscanArray - median) > self.config.overscanMaxDev)
-            overscanImage.mask.array[bad] = overscanImage.mask.getPlaneBitMask("SAT")
-
-            statControl = afwMath.StatisticsControl()
-            statControl.setAndMask(ccdExposure.mask.getPlaneBitMask("SAT"))
-
             overscanResults = self.overscan.run(ampImage.getImage(), overscanImage, amp)
 
-            # Measure average overscan levels and record them in the metadata.
-            levelStat = afwMath.MEDIAN
-            sigmaStat = afwMath.STDEVCLIP
-
-            sctrl = afwMath.StatisticsControl(self.config.qa.flatness.clipSigma,
-                                              self.config.qa.flatness.nIter)
-            metadata = ccdExposure.getMetadata()
-            ampNum = amp.getName()
-            # if self.config.overscanFitType in ("MEDIAN", "MEAN", "MEANCLIP"):
-            if isinstance(overscanResults.overscanFit, float):
-                metadata[f"ISR_OSCAN_LEVEL{ampNum}"] = overscanResults.overscanFit
-                metadata[f"ISR_OSCAN_SIGMA{ampNum}"] = 0.0
-            else:
-                stats = afwMath.makeStatistics(overscanResults.overscanFit, levelStat | sigmaStat, sctrl)
-                metadata[f"ISR_OSCAN_LEVEL{ampNum}"] = stats.getValue(levelStat)
-                metadata[f"ISR_OSCAN_SIGMA%{ampNum}"] = stats.getValue(sigmaStat)
+            metadata[f"ISR_OSCAN_LEVEL{ampNum}"] = overscanResults.overscanMean
+            metadata[f"ISR_OSCAN_SIGMA{ampNum}"] = overscanResults.overscanSigma
 
         return overscanResults
 

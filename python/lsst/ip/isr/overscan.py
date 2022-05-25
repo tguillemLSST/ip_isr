@@ -133,12 +133,21 @@ class OverscanCorrectionTask(pipeBase.Task):
             Raised if an invalid overscan type is set.
 
         """
+        # Mask saturated pixels.
+        overscanArray = overscanImage.image.array
+        overscanMask = overscanImage.mask.array
+        median = np.ma.median(np.ma.masked_where(overscanMask, overscanArray))
+        bad = np.where(np.abs(overscanArray - median) > self.config.overscanMaxDev)
+        overscanMask[bad] = overscanImage.mask.getPlaneBitMask("SAT")
+
         if self.config.fitType in ('MEAN', 'MEANCLIP', 'MEDIAN'):
             overscanResult = self.measureConstantOverscan(overscanImage)
             overscanValue = overscanResult.overscanValue
             offImage = overscanValue
             overscanModel = overscanValue
             maskSuspect = None
+            overscanMean = overscanValue
+            overscanSigma = 0.0
         elif self.config.fitType in ('MEDIAN_PER_ROW', 'POLY', 'CHEB', 'LEG',
                                      'NATURAL_SPLINE', 'CUBIC_SPLINE', 'AKIMA_SPLINE'):
             overscanResult = self.measureVectorOverscan(overscanImage)
@@ -166,6 +175,11 @@ class OverscanCorrectionTask(pipeBase.Task):
                 overscanArray[:, :] = overscanValue[:, np.newaxis]
                 if maskSuspect:
                     maskSuspect.getArray()[maskArray, :] |= ampImage.getMask().getPlaneBitMask("SUSPECT")
+
+            stats = afwMath.makeStatistics(overscanResults.overscanFit,
+                                           afwMath.MEDIAN | afwMath.STDEVCLIP, self.statControl)
+            overscanMean = stats.getValue(afwMath.MEDIAN)
+            overscanSigma = stats.getValue(afwMath.STDEVCLIP)
         else:
             raise RuntimeError('%s : %s an invalid overscan type' %
                                ("overscanCorrection", self.config.fitType))
@@ -179,7 +193,9 @@ class OverscanCorrectionTask(pipeBase.Task):
         return pipeBase.Struct(imageFit=offImage,
                                overscanFit=overscanModel,
                                overscanImage=overscanImage,
-                               edgeMask=maskSuspect)
+                               edgeMask=maskSuspect,
+                               overscanMean=overscanMean,
+                               overscanSigma=overscanSigma)
 
     @staticmethod
     def integerConvert(image):
