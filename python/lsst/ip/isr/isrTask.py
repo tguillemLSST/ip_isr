@@ -973,7 +973,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
     Parameters
     ----------
-    args : `list`
+    args : `list`, optional
         Positional arguments passed to the Task constructor.
         None used at this time.
     kwargs : `dict`, optional
@@ -1114,6 +1114,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -------
         result : `lsst.pipe.base.Struct`
             Result struct with components (which may be `None`):
+
             - ``bias``: bias calibration frame (`afw.image.Exposure`)
             - ``linearizer``: functor for linearization
                 (`ip.isr.linearize.LinearizeBase`)
@@ -1284,6 +1285,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         """Perform instrument signature removal on an exposure.
 
         Steps included in the ISR processing, in order performed, are:
+
         - saturation and suspect pixel masking
         - overscan subtraction
         - CCD assembly of individual amplifiers
@@ -1353,13 +1355,13 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             atmosphere, assumed to be spatially constant.
         detectorNum : `int`, optional
             The integer number for the detector to process.
-        isGen3 : bool, optional
-            Flag this call to run() as using the Gen3 butler environment.
         strayLightData : `object`, optional
             Opaque object containing calibration information for stray-light
             correction.  If `None`, no correction will be performed.
         illumMaskedImage : `lsst.afw.image.MaskedImage`, optional
             Illumination correction image.
+        isGen3 : `bool`, optional
+            Flag this call to run() as using the Gen3 butler environment.
 
         Returns
         -------
@@ -1401,9 +1403,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         In addition, setting the "postISRCCD" entry displays the
         exposure after all ISR processing has finished.
-
         """
-
         if isGen3 is True:
             # Gen3 currently cannot automatically do configuration overrides.
             # DM-15257 looks to discuss this issue.
@@ -1804,13 +1804,6 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             Result struct with component:
             - ``exposure`` : `afw.image.Exposure`
                 The fully ISR corrected exposure.
-
-        Raises
-        ------
-        RuntimeError
-            Raised if a configuration option is set to True, but the
-            required calibration data does not exist.
-
         """
         self.log.info("Performing ISR on sensor %s.", sensorRef.dataId)
 
@@ -1846,7 +1839,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         dateObs : `str`, optional
             Date of the observation.  Used to correct butler failures
             when using fallback filters.
-        immediate : `Bool`
+        immediate : `bool`, optional
             If True, disable butler proxies to enable error handling
             within this routine.
 
@@ -1954,7 +1947,6 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ------
         RuntimeError
             Raised if the exposure type cannot be converted to float.
-
         """
         if isinstance(exposure, afwImage.ExposureF):
             # Nothing to be done
@@ -1976,7 +1968,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         ccdExposure : `lsst.afw.image.Exposure`
             Input exposure to be masked.
-        amp : `lsst.afw.table.AmpInfoCatalog`
+        amp : `lsst.afw.cameraGeom.Amplifier`
             Catalog of parameters defining the amplifier on this
             exposure to mask.
         defects : `lsst.ip.isr.Defects`
@@ -1985,10 +1977,9 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Returns
         -------
-        badAmp : `Bool`
+        badAmp : `bool`
             If this is true, the entire amplifier area is covered by
             defects and unusable.
-
         """
         maskedImage = ccdExposure.getMaskedImage()
 
@@ -2065,6 +2056,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -------
         overscanResults : `lsst.pipe.base.Struct`
             Result struct with components:
+
             - ``imageFit`` : scalar or `lsst.afw.image.Image`
                 Value or fit subtracted from the amplifier image data.
             - ``overscanFit`` : scalar or `lsst.afw.image.Image`
@@ -2073,11 +2065,6 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 Image of the overscan region with the overscan
                 correction applied. This quantity is used to estimate
                 the amplifier read noise empirically.
-
-        Raises
-        ------
-        RuntimeError
-            Raised if the ``amp`` does not contain raw pixel information.
 
         See Also
         --------
@@ -2192,14 +2179,12 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ptcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`, optional
             PTC dataset containing the gains and read noise.
 
-
         Raises
         ------
         RuntimeError
             Raised if either ``usePtcGains`` of ``usePtcReadNoise``
-            are ``True``, but ptcDataset is not provided.
-
-            Raised if ```doEmpiricalReadNoise`` is ``True`` but
+            are ``True``, but ptcDataset is not provided.  Also raised
+            if ```doEmpiricalReadNoise`` is ``True`` but
             ``overscanImage`` is ``None``.
 
         See also
@@ -2274,7 +2259,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             Exposure to process.
         darkExposure : `lsst.afw.image.Exposure`
             Dark exposure of the same size as ``exposure``.
-        invert : `Bool`, optional
+        invert : `bool`, optional
             If True, re-add the dark to an already corrected image.
 
         Raises
@@ -2321,7 +2306,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Returns
         -------
-        doLinearize : `Bool`
+        doLinearize : `bool`
             If True, linearization should be performed.
         """
         return self.config.doLinearize and \
@@ -2336,7 +2321,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             Exposure to process.
         flatExposure : `lsst.afw.image.Exposure`
             Flat exposure of the same size as ``exposure``.
-        invert : `Bool`, optional
+        invert : `bool`, optional
             If True, unflatten an already flattened image.
 
         See Also
@@ -2359,7 +2344,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         exposure : `lsst.afw.image.Exposure`
             Exposure to process.  Only the amplifier DataSec is processed.
-        amp : `lsst.afw.table.AmpInfoCatalog`
+        amp : `lsst.afw.cameraGeom.Amplifier`
             Amplifier detector data.
 
         See Also
@@ -2408,7 +2393,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         exposure : `lsst.afw.image.Exposure`
             Exposure to process.  Only the amplifier DataSec is processed.
-        amp : `lsst.afw.table.AmpInfoCatalog`
+        amp : `lsst.afw.cameraGeom.Amplifier`
             Amplifier detector data.
 
         See Also
@@ -2445,7 +2430,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         exposure : `lsst.afw.image.Exposure`
             Exposure to process.
         defectBaseList : `lsst.ip.isr.Defects` or `list` of
-                         `lsst.afw.image.DefectBase`.
+                         `lsst.afw.image.DefectBase`
             List of defects to mask.
 
         Notes
@@ -2503,7 +2488,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         exposure : `lsst.afw.image.Exposure`
             Exposure to process.
         defectBaseList : `lsst.ip.isr.Defects` or `list` of
-                         `lsst.afw.image.DefectBase`.
+                         `lsst.afw.image.DefectBase`
             List of defects to mask and interpolate.
 
         See Also
@@ -2574,7 +2559,7 @@ class IsrTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         exposure : `lsst.afw.image.Exposure`
             Exposure to process.
-        IsrQaConfig : `lsst.ip.isr.isrQa.IsrQaConfig`
+        IsrQaConfig : `lsst.ip.isr.isrQa.IsrQaConfig`, optional
             Configuration object containing parameters on which background
             statistics and subgrids to use.
         """
@@ -2767,6 +2752,7 @@ class RunIsrTask(pipeBase.CmdLineTask):
     allowing identical post-ISR images to be generated by both the
     processCcd and isrTask code.
     """
+
     ConfigClass = RunIsrConfig
     _DefaultName = "runIsr"
 
@@ -2775,7 +2761,8 @@ class RunIsrTask(pipeBase.CmdLineTask):
         self.makeSubtask("isr")
 
     def runDataRef(self, dataRef):
-        """
+        """Wrapper for IsrTask.
+
         Parameters
         ----------
         dataRef : `lsst.daf.persistence.ButlerDataRef`

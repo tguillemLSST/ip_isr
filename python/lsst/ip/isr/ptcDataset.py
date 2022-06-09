@@ -50,14 +50,11 @@ class PhotonTransferCurveDataset(IsrCalib):
     ----------
     ampNames : `list`
         List with the names of the amplifiers of the detector at hand.
-
     ptcFitType : `str`
         Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION",
         or "FULLCOVARIANCE".
-
     covMatrixSide : `int`
         Maximum lag of covariances (size of square covariance matrices).
-
     kwargs : `dict`, optional
         Other keyword arguments to pass to the parent init.
 
@@ -157,7 +154,6 @@ class PhotonTransferCurveDataset(IsrCalib):
     _VERSION = 1.0
 
     def __init__(self, ampNames=[], ptcFitType=None, covMatrixSide=1, **kwargs):
-
         self.ptcFitType = ptcFitType
         self.ampNames = ampNames
         self.covMatrixSide = covMatrixSide
@@ -260,8 +256,10 @@ class PhotonTransferCurveDataset(IsrCalib):
 
     def updateMetadata(self, setDate=False, **kwargs):
         """Update calibration metadata.
+
         This calls the base class's method after ensuring the required
         calibration keywords will be saved.
+
         Parameters
         ----------
         setDate : `bool`, optional
@@ -277,18 +275,20 @@ class PhotonTransferCurveDataset(IsrCalib):
     @classmethod
     def fromDict(cls, dictionary):
         """Construct a calibration from a dictionary of properties.
-        Must be implemented by the specific calibration subclasses.
+
         Parameters
         ----------
         dictionary : `dict`
             Dictionary of properties.
+
         Returns
         -------
         calib : `lsst.ip.isr.CalibType`
             Constructed calibration.
+
         Raises
         ------
-        RuntimeError :
+        RuntimeError
             Raised if the supplied dictionary is for a different
             calibration.
         """
@@ -347,8 +347,10 @@ class PhotonTransferCurveDataset(IsrCalib):
 
     def toDict(self):
         """Return a dictionary containing the calibration properties.
+
         The dictionary should be able to be round-tripped through
         `fromDict`.
+
         Returns
         -------
         dictionary : `dict`
@@ -394,16 +396,15 @@ class PhotonTransferCurveDataset(IsrCalib):
     @classmethod
     def fromTable(cls, tableList):
         """Construct calibration from a list of tables.
-        This method uses the `fromDict` method to create the
-        calibration, after constructing an appropriate dictionary from
-        the input tables.
+
         Parameters
         ----------
         tableList : `list` [`lsst.afw.table.Table`]
             List of tables to use to construct the datasetPtc.
+
         Returns
         -------
-        calib : `lsst.cp.pipe.`
+        calib : `lsst.ip.isr.PhotonTransferCurve`
             The calibration defined in the tables.
         """
         ptcTable = tableList[0]
@@ -479,6 +480,7 @@ class PhotonTransferCurveDataset(IsrCalib):
 
         The list of tables should create an identical calibration
         after being passed to this class's fromTable method.
+
         Returns
         -------
         tableList : `list` [`astropy.table.Table`]
@@ -559,7 +561,19 @@ class PhotonTransferCurveDataset(IsrCalib):
 
     def getExpIdsUsed(self, ampName):
         """Get the exposures used, i.e. not discarded, for a given amp.
+
         If no mask has been created yet, all exposures are returned.
+
+        Parameters
+        ----------
+        ampName : `str`
+            Name of the amplifier to retrieve exposure IDs for.
+
+        Returns
+        -------
+        results : `list` [`tuple` [`int`, `int`]]
+            A list of tuples, with each tuple containing the pair of
+            exposure IDs used.
         """
         if len(self.expIdMask[ampName]) == 0:
             return self.inputExpIdPairs[ampName]
@@ -573,4 +587,11 @@ class PhotonTransferCurveDataset(IsrCalib):
         return [(exp1, exp2) for ((exp1, exp2), m) in zip(pairs, mask) if bool(m) is True]
 
     def getGoodAmps(self):
+        """Get a list of good amplifiers.
+
+        Returns
+        -------
+        results : `list` [`str`]
+            List of good amplifiers.
+        """
         return [amp for amp in self.ampNames if amp not in self.badAmps]

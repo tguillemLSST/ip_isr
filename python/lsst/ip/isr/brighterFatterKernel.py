@@ -48,14 +48,12 @@ class BrighterFatterKernel(IsrCalib):
 
     Parameters
     ----------
-    level : `str`
+    level : `str`, optional
         Level the kernels will be generated for.
-    log : `logging.Logger`, optional
-        Log to write messages to.
-    **kwargs :
+    **kwargs : Any
         Parameters to pass to parent constructor.
-
     """
+
     _OBSTYPE = 'bfk'
     _SCHEMA = 'Brighter-fatter kernel'
     _VERSION = 1.0
@@ -100,7 +98,7 @@ class BrighterFatterKernel(IsrCalib):
         setDate : `bool`, optional
             Update the CALIBDATE fields in the metadata to the current
             time. Defaults to False.
-        kwargs :
+        kwargs : Any
             Other keyword parameters to set in the metadata.
         """
         kwargs['LEVEL'] = self.level
@@ -199,7 +197,7 @@ class BrighterFatterKernel(IsrCalib):
 
         Returns
         -------
-        calib : `lsst.ip.isr.BrighterFatterKernel
+        calib : `lsst.ip.isr.BrighterFatterKernel`
             Constructed calibration.
 
         Raises
@@ -357,7 +355,6 @@ class BrighterFatterKernel(IsrCalib):
         tableList : `list` [`lsst.afw.table.Table`]
             List of tables containing the crosstalk calibration
             information.
-
         """
         tableList = []
         self.updateMetadata()
@@ -421,6 +418,15 @@ class BrighterFatterKernel(IsrCalib):
     def makeDetectorKernelFromAmpwiseKernels(self, detectorName, ampsToExclude=[]):
         """Average the amplifier level kernels to create a detector level
         kernel.
+
+        Parameters
+        ----------
+        detectorName : `str`
+            Name of the detector to build a kernel for.  This supplies
+            the key that the new kernel will be indexed in the
+            calibration ``detKernels`` dictionary.
+        ampsToExclude : `list` [`str`]
+            List of amplifier names to exclude.
         """
         inKernels = np.array([self.ampKernels[amp] for amp in
                               self.ampKernels if amp not in ampsToExclude])
@@ -436,4 +442,17 @@ class BrighterFatterKernel(IsrCalib):
         self.detKernels[detectorName] = avgKernel
 
     def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
-        self.detKernel[detectorName] = self.ampKernel[ampName]
+        """Create a detector level kernel by promoting an amplifier level
+        kernel.
+
+        Parameters
+        ----------
+        ampName : `str`
+            Amplifier name used as an index in the calibration
+            ``ampKernel` dictionary that will be promoted.
+        detectorName : `str`
+            Name of the detector to build a kernel for.  This supplies
+            the key that the new kernel will be indexed in the
+            calibration ``detKernels`` dictionary.
+        """
+        self.detKernels[detectorName] = self.ampKernel[ampName]

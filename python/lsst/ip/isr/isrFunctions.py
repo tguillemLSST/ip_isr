@@ -37,6 +37,13 @@ from .overscan import OverscanCorrectionTask, OverscanCorrectionTaskConfig
 from .defects import Defects
 
 
+__all__ = ['getPhysicalFilter', 'biasCorrection', 'widenSaturationTrails', 'interpolateFromMask',
+           'createPsf', 'brighterFatterCorrection', 'growMasks', 'applyGains', 'attachTransmissionCurve',
+           'illuminationCorrection', 'setBadRegions', 'overscanCorrection', 'updateVariance',
+           'darkCorrection', 'flatCorrection', 'makeThresholdMask', 'checkFilter', 'gainContext',
+           'saturationCorrection', 'transposeMaskedImage', 'trimToMatchCalibBBox', 'interpolateDefectList']
+
+
 def createPsf(fwhm):
     """Make a double Gaussian PSF.
 
@@ -88,6 +95,11 @@ def interpolateDefectList(maskedImage, defectList, fwhm, fallbackValue=None):
     fallbackValue : scalar, optional
         Fallback value if an interpolated value cannot be determined.
         If None, then the clipped mean of the image is used.
+
+    Returns
+    -------
+    maskedImage : `lsst.afw.image.MaskedImage`
+        Input image with the defects interpolated.
     """
     psf = createPsf(fwhm)
     if fallbackValue is None:
@@ -140,11 +152,11 @@ def growMasks(mask, radius=0, maskNameList=['BAD'], maskValue="BAD"):
     ----------
     mask : `lsst.afw.image.Mask`
         Mask image to process.
-    radius : scalar
+    radius : scalar, optional
         Amount to grow the mask.
-    maskNameList : `str` or `list` [`str`]
+    maskNameList : `str` or `list` [`str`], optional
         Mask names that should be grown.
-    maskValue : `str`
+    maskValue : `str`, optional
         Mask plane to assign the newly masked pixels to.
     """
     if radius > 0:
@@ -170,6 +182,11 @@ def interpolateFromMask(maskedImage, fwhm, growSaturatedFootprints=1,
         Mask plane name.
     fallbackValue : scalar, optional
         Value of last resort for interpolation.
+
+    Returns
+    -------
+    maskedImage : `lsst.afw.image.MaskedImage`
+        Defect-interpolated image.
     """
     mask = maskedImage.getMask()
 
@@ -208,6 +225,11 @@ def saturationCorrection(maskedImage, saturation, fwhm, growFootprints=1, interp
         Mask plane name.
     fallbackValue : scalar, optional
         Value of last resort for interpolation.
+
+    Returns
+    -------
+    maskedImage : `lsst.afw.image.MaskedImage`
+        Saturation masked, and possibly interpolated image.
     """
     defectList = makeThresholdMask(
         maskedImage=maskedImage,
@@ -240,6 +262,7 @@ def trimToMatchCalibBBox(rawMaskedImage, calibMaskedImage):
     -------
     replacementMaskedImage : `lsst.afw.image.MaskedImage`
         ``rawMaskedImage`` trimmed to the appropriate size
+
     Raises
     ------
     RuntimeError
@@ -277,7 +300,7 @@ def biasCorrection(maskedImage, biasMaskedImage, trimToFit=False):
        Image to process.  The image is modified by this method.
     biasMaskedImage : `lsst.afw.image.MaskedImage`
         Bias image of the same size as ``maskedImage``
-    trimToFit : `Bool`, optional
+    trimToFit : `bool`, optional
         If True, raw data is symmetrically trimmed to match
         calibration size.
 
@@ -286,7 +309,6 @@ def biasCorrection(maskedImage, biasMaskedImage, trimToFit=False):
     RuntimeError
         Raised if ``maskedImage`` and ``biasMaskedImage`` do not have
         the same size.
-
     """
     if trimToFit:
         maskedImage = trimToMatchCalibBBox(maskedImage, biasMaskedImage)
@@ -310,9 +332,9 @@ def darkCorrection(maskedImage, darkMaskedImage, expScale, darkScale, invert=Fal
         Dark exposure time for ``maskedImage``.
     darkScale : scalar
         Dark exposure time for ``darkMaskedImage``.
-    invert : `Bool`, optional
+    invert : `bool`, optional
         If True, re-add the dark to an already corrected image.
-    trimToFit : `Bool`, optional
+    trimToFit : `bool`, optional
         If True, raw data is symmetrically trimmed to match
         calibration size.
 
@@ -368,14 +390,14 @@ def flatCorrection(maskedImage, flatMaskedImage, scalingType, userScale=1.0, inv
         Image to process.  The image is modified.
     flatMaskedImage : `lsst.afw.image.MaskedImage`
         Flat image of the same size as ``maskedImage``
-    scalingType : str
+    scalingType : `str`
         Flat scale computation method.  Allowed values are 'MEAN',
         'MEDIAN', or 'USER'.
     userScale : scalar, optional
-        Scale to use if ``scalingType``='USER'.
-    invert : `Bool`, optional
+        Scale to use if ``scalingType`` is 'USER'.
+    invert : `bool`, optional
         If True, unflatten an already flattened image.
-    trimToFit : `Bool`, optional
+    trimToFit : `bool`, optional
         If True, raw data is symmetrically trimmed to match
         calibration size.
 
@@ -421,7 +443,7 @@ def illuminationCorrection(maskedImage, illumMaskedImage, illumScale, trimToFit=
         Illumination correction image of the same size as ``maskedImage``.
     illumScale : scalar
         Scale factor for the illumination correction.
-    trimToFit : `Bool`, optional
+    trimToFit : `bool`, optional
         If True, raw data is symmetrically trimmed to match
         calibration size.
 
@@ -451,7 +473,7 @@ def overscanCorrection(ampMaskedImage, overscanImage, fitType='MEDIAN', order=1,
         Image of amplifier to correct; modified.
     overscanImage : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
         Image of overscan; modified.
-    fitType : `str`
+    fitType : `str`, optional
         Type of fit for overscan correction. May be one of:
 
         - ``MEAN``: use mean of overscan.
@@ -465,13 +487,16 @@ def overscanCorrection(ampMaskedImage, overscanImage, fitType='MEDIAN', order=1,
         - ``CUBIC_SPLINE``: fit with cubic spline.
         - ``AKIMA_SPLINE``: fit with Akima spline.
 
-    order : `int`
+    order : `int`, optional
         Polynomial order or number of spline knots; ignored unless
         ``fitType`` indicates a polynomial or spline.
-    statControl : `lsst.afw.math.StatisticsControl`
+    collapseRej : `float`, optional
+        Sigma threshold for rejecting pixels when collapsing the
+        overscan from an image to a vector.
+    statControl : `lsst.afw.math.StatisticsControl`, optional
         Statistics control object.  In particular, we pay attention to
         ``numSigmaClip``.
-    overscanIsInt : `bool`
+    overscanIsInt : `bool`, optional
         Treat the overscan region as consisting of integers, even if it's been
         converted to float.  E.g. handle ties properly.
 
@@ -486,6 +511,7 @@ def overscanCorrection(ampMaskedImage, overscanImage, fitType='MEDIAN', order=1,
             `lsst.afw.image.Image`)
         - ``overscanImage``: Overscan corrected overscan region
             (`lsst.afw.image.Image`)
+
     Raises
     ------
     RuntimeError
@@ -534,10 +560,10 @@ def brighterFatterCorrection(exposure, kernel, maxIter, threshold, applyGain, ga
     threshold : scalar
         Convergence threshold in terms of the sum of absolute
         deviations between an iteration and the previous one.
-    applyGain : `Bool`
+    applyGain : `bool`
         If True, then the exposure values are scaled by the gain prior
         to correction.
-    gains : `dict` [`str`, `float`]
+    gains : `dict` [`str`, `float`], optional
         A dictionary, keyed by amplifier name, of the gains to use.
         If gains is None, the nominal gains in the amplifier object are used.
 
@@ -582,7 +608,6 @@ def brighterFatterCorrection(exposure, kernel, maxIter, threshold, applyGain, ga
 
     # The image needs to be units of electrons/holes
     with gainContext(exposure, image, applyGain, gains):
-
         kLx = numpy.shape(kernel)[0]
         kLy = numpy.shape(kernel)[1]
         kernelImage = afwImage.ImageD(kLx, kLy)
@@ -609,7 +634,6 @@ def brighterFatterCorrection(exposure, kernel, maxIter, threshold, applyGain, ga
         endY = -kLy//2
 
         for iteration in range(maxIter):
-
             afwMath.convolve(outImage, tempImage, fixedKernel, convCntrl)
             tmpArray = tempImage.getArray()
             outArray = outImage.getArray()
@@ -654,9 +678,9 @@ def gainContext(exp, image, apply, gains=None):
         Exposure to apply/remove gain.
     image : `lsst.afw.image.Image`
         Image to apply/remove gain.
-    apply : `Bool`
+    apply : `bool`
         If True, apply and remove the amplifier gain.
-    gains : `dict` [`str`, `float`]
+    gains : `dict` [`str`, `float`], optional
         A dictionary, keyed by amplifier name, of the gains to use.
         If gains is None, the nominal gains in the amplifier object are used.
 
@@ -709,16 +733,16 @@ def attachTransmissionCurve(exposure, opticsTransmission=None, filterTransmissio
         ``TransmissionCurves`` in post-assembly trimmed detector coordinates.
         Must have a valid ``Detector`` attached that matches the detector
         associated with sensorTransmission.
-    opticsTransmission : `lsst.afw.image.TransmissionCurve`
+    opticsTransmission : `lsst.afw.image.TransmissionCurve`, optional
         A ``TransmissionCurve`` that represents the throughput of the optics,
         to be evaluated in focal-plane coordinates.
-    filterTransmission : `lsst.afw.image.TransmissionCurve`
+    filterTransmission : `lsst.afw.image.TransmissionCurve`, optional
         A ``TransmissionCurve`` that represents the throughput of the filter
         itself, to be evaluated in focal-plane coordinates.
-    sensorTransmission : `lsst.afw.image.TransmissionCurve`
+    sensorTransmission : `lsst.afw.image.TransmissionCurve`, optional
         A ``TransmissionCurve`` that represents the throughput of the sensor
         itself, to be evaluated in post-assembly trimmed detector coordinates.
-    atmosphereTransmission : `lsst.afw.image.TransmissionCurve`
+    atmosphereTransmission : `lsst.afw.image.TransmissionCurve`, optional
         A ``TransmissionCurve`` that represents the throughput of the
         atmosphere, assumed to be spatially constant.
 
@@ -756,7 +780,7 @@ def applyGains(exposure, normalizeGains=False, ptcGains=None):
     ----------
     exposure : `lsst.afw.image.Exposure`
         Exposure to process.  The image is modified.
-    normalizeGains : `Bool`, optional
+    normalizeGains : `bool`, optional
         If True, then amplifiers are scaled to force the median of
         each amplifier to equal the median of those medians.
     ptcGains : `dict`[`str`], optional
@@ -793,7 +817,6 @@ def widenSaturationTrails(mask):
     mask : `lsst.afw.image.Mask`
         Mask which will have the saturated areas grown.
     """
-
     extraGrowDict = {}
     for i in range(1, 6):
         extraGrowDict[i] = 0
