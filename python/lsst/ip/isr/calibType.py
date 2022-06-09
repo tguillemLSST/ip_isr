@@ -645,7 +645,7 @@ class IsrProvenance(IsrCalib):
 
     _OBSTYPE = "IsrProvenance"
 
-    def __init__(self, calibType="unknown", *kwargs):
+    def __init__(self, calibType="unknown", **kwargs):
         self.calibType = calibType
         self.dimensions = set()
         self.dataIdList = list()
