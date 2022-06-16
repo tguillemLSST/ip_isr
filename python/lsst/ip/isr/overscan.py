@@ -20,13 +20,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import numpy as np
-import time
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 import lsst.pipe.base as pipeBase
 import lsst.pex.config as pexConfig
-
-from .isr import fitOverscanImage
 
 __all__ = ["OverscanCorrectionTaskConfig", "OverscanCorrectionTask"]
 
@@ -49,6 +46,7 @@ class OverscanCorrectionTaskConfig(pexConfig.Config):
             "MEANCLIP": "Correct using a clipped mean of the overscan region",
             "MEDIAN": "Correct using the median of the overscan region",
             "MEDIAN_PER_ROW": "Correct using the median per row of the overscan region",
+            "ROW_COL": "2D row and col correction from the serial and parallel overscan regions",
         },
     )
     order = pexConfig.Field(
@@ -65,7 +63,7 @@ class OverscanCorrectionTaskConfig(pexConfig.Config):
     maskPlanes = pexConfig.ListField(
         dtype=str,
         doc="Mask planes to reject when measuring overscan",
-        default=['BAD', 'SAT'],
+        default=['SAT'],
     )
     overscanIsInt = pexConfig.Field(
         dtype=bool,
@@ -136,6 +134,10 @@ class OverscanCorrectionTask(pipeBase.Task):
             Raised if an invalid overscan type is set.
 
         """
+        #self.log.info("---------OVERSCAN correction from my local ip_isr")
+        #self.config.fitType = 'MEDIAN_PER_CUBE'
+        self.log.info('%s : %s overscan type' %
+                      ("overscanCorrection", self.config.fitType))
         if self.config.fitType in ('MEAN', 'MEANCLIP', 'MEDIAN'):
             overscanResult = self.measureConstantOverscan(overscanImage)
             overscanValue = overscanResult.overscanValue
@@ -169,6 +171,30 @@ class OverscanCorrectionTask(pipeBase.Task):
                 overscanArray[:, :] = overscanValue[:, np.newaxis]
                 if maskSuspect:
                     maskSuspect.getArray()[maskArray, :] |= ampImage.getMask().getPlaneBitMask("SUSPECT")
+        elif self.config.fitType in ('ROW_COL', ):
+           print('++++++++++++++++++HACK')
+           print('ampImage')
+           print(ampImage.getArray().shape)
+           print(ampImage)
+           print('overscanImage')
+           print(overscanImage.image)
+           #print('overscanArray')
+           print(overscanImage.image.getArray().shape)
+           #overscanModel = afwImage.ImageF(overscanImage.getDimensions())
+           #overscanArray = overscanModel.getArray()
+           #print(overscanArray)
+           print('END')
+###           imarr = fits[i+1].data
+###                   ###2D correction
+###          mean_over_per_line=np.mean(imarr[:,first_s_over+2:],axis=1)
+###                   rawl=np.zeros((last_l-first_p_over-2,last_s))
+###                   for l in range(first_p_over+2,last_l):
+###                       rawl[l-first_p_over-2,:]=imarr[l,:]-mean_over_per_line[l]
+###                       mean_over_per_column=np.mean(rawl[:,:],axis=0)
+###                       linef=mean_over_per_line[:,np.newaxis]
+###                               # generate the 2D correction (thank's to numpy)
+###                                       over_cor_mean=mean_over_per_column+linef
+###                                              imarr = imarr - over_cor_mean
         else:
             raise RuntimeError('%s : %s an invalid overscan type' %
                                ("overscanCorrection", self.config.fitType))
@@ -478,21 +504,10 @@ class OverscanCorrectionTask(pipeBase.Task):
         calcImage, isTransposed = self.transpose(calcImage)
         masked = self.maskOutliers(calcImage)
 
-        startTime = time.perf_counter()
-
         if self.config.fitType == 'MEDIAN_PER_ROW':
-            mi = afwImage.MaskedImageI(image.getBBox())
-            masked = masked.astype(int)
-            if isTransposed:
-                masked = masked.transpose()
-
-            mi.image.array[:, :] = masked.data[:, :]
-            if bool(masked.mask.shape):
-                mi.mask.array[:, :] = masked.mask[:, :]
-
-            overscanVector = fitOverscanImage(mi, self.config.maskPlanes, isTransposed)
+            overscanVector = self.collapseArrayMedian(masked)
             maskArray = self.maskExtrapolated(overscanVector)
-        else:
+        elif(1==0):
             collapsed = self.collapseArray(masked)
 
             num = len(collapsed)
@@ -521,8 +536,19 @@ class OverscanCorrectionTask(pipeBase.Task):
                 # Otherwise we can just use things as normal.
                 overscanVector = evaler(indices, coeffs)
                 maskArray = self.maskExtrapolated(collapsed)
-        endTime = time.perf_counter()
-        self.log.info(f"Overscan measurement took {endTime - startTime}s for {self.config.fitType}")
+        else:
+            print('-------2D now')
+            collapsed = self.collapseArray(masked)
+            
+            num = len(collapsed)
+            indices = 2.0*np.arange(num)/float(num) - 1.0
+            print(num)
+            print(indices)
+
+            print(calcImage)
+            
+
+            print('-------END')
         return pipeBase.Struct(overscanValue=np.array(overscanVector),
                                maskArray=maskArray,
                                isTransposed=isTransposed)
